@@ -5,7 +5,7 @@ Versión live del clasificador: recibe un stream RTSP, extrae descriptores
 de cada frame y los compara contra 6 señales de referencia, dibujando
 bounding box + etiqueta sobre cada detección.
 
-Señales de referencia (archivos en signs/references/):
+Señales de referencia (archivos en sign_images/):
   sign0.jpeg → restricted_area   (Área Restringida)
   sign1.jpeg → pedestrian_zone   (Zona Peatonal)
   sign2.jpeg → robots_only       (Zona Sólo Robots — AGV triangular)
@@ -30,12 +30,12 @@ import numpy as np
 # ===========================================================================
 # CONFIGURACIÓN
 # ===========================================================================
-RTSP_URL       = "rtsp://192.168.1.9:8554/stream"
+RTSP_URL       = "rtsp://10.43.53.23:8554/stream"
 FRAME_SIZE     = (640, 480)              # (W, H) a los que se redimensiona
 RECONNECT      = True
 
-REFERENCES_DIR = "signs/references"
-SCREENSHOT_DIR = "signs/screenshots"
+REFERENCES_DIR = "sign_images"
+SCREENSHOT_DIR = "screenshots"
 
 # Detector inicial (se puede cambiar en caliente con la tecla D)
 DEFAULT_DETECTOR = "sift"                # "sift" o "orb"
