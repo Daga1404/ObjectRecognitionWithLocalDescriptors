@@ -5,7 +5,7 @@ Procesa cada imagen en `signs/test_images/` con AMBOS detectores y guarda
 una comparativa lado-a-lado en `signs/outputs/`. Ideal para validar el
 pipeline antes de pasar a video en vivo.
 
-Señales de referencia (archivos en signs/references/):
+Señales de referencia (archivos en sign_images/):
   sign0.jpeg → restricted_area   (Área Restringida)
   sign1.jpeg → pedestrian_zone   (Zona Peatonal)
   sign2.jpeg → robots_only       (Zona Sólo Robots — AGV triangular)
@@ -36,9 +36,9 @@ import numpy as np
 # ===========================================================================
 # CONFIGURACIÓN
 # ===========================================================================
-REFERENCES_DIR  = "signs/references"
-TEST_IMAGES_DIR = "signs/test_images"
-OUTPUTS_DIR     = "signs/outputs"
+REFERENCES_DIR  = "sign_images"
+TEST_IMAGES_DIR = "sign_images"
+OUTPUTS_DIR     = "outputs"
 
 # Opcional: redimensionar imagen de prueba al procesar (None = mantener original)
 MAX_TEST_SIZE = 1280                 # lado mayor máximo; None para no redimensionar
