@@ -64,6 +64,20 @@ MAX_ASPECT_RATIO   = 3.30
 
 APPLY_CLAHE = True
 
+# — Fallback color+forma (para señales sin features distintivos, p.ej. 'restricted_area') —
+RED_FALLBACK_ENABLED  = True
+RED_FALLBACK_LABEL    = "restricted_area"
+RED_HSV_LOW1          = (  0,  80,  60)
+RED_HSV_HIGH1         = ( 10, 255, 255)
+RED_HSV_LOW2          = (170,  80,  60)
+RED_HSV_HIGH2         = (179, 255, 255)
+RED_MIN_AREA_FRAC     = 0.005
+RED_MAX_AREA_FRAC     = 0.40
+RED_MIN_CIRCULARITY   = 0.55           # 4πA/P² (anillo cerrado da valor alto tras MORPH_CLOSE)
+RED_MIN_ASPECT        = 0.70
+RED_MAX_ASPECT        = 1.45
+RED_REQUIRE_DIAGONAL  = True           # exige una línea ~diagonal dentro del círculo
+
 # Señales: clave → (archivo, texto en pantalla, color BGR)
 SIGNS = {
     "restricted_area": ("sign0.jpeg", "AREA RESTRINGIDA",  ( 50,  50, 220)),
@@ -318,6 +332,86 @@ def draw_hud(frame, detector_name, fps, n_hits, paused):
 
 
 # ===========================================================================
+# FALLBACK COLOR + FORMA  (anillo rojo con barra diagonal)
+# ===========================================================================
+def _has_diagonal_line(roi_mask):
+    h, w = roi_mask.shape[:2]
+    if h < 10 or w < 10:
+        return False
+    edges = cv2.Canny(roi_mask, 50, 150)
+    min_len = int(0.4 * min(h, w))
+    lines = cv2.HoughLinesP(edges, 1, np.pi / 180, threshold=30,
+                            minLineLength=min_len, maxLineGap=10)
+    if lines is None:
+        return False
+    for x1, y1, x2, y2 in lines.reshape(-1, 4):
+        dx, dy = x2 - x1, y2 - y1
+        if dx == 0:
+            continue
+        ang = abs(np.degrees(np.arctan2(dy, dx)))   # 0..180
+        if 20 <= ang <= 70 or 110 <= ang <= 160:
+            return True
+    return False
+
+
+def detect_red_prohibition(frame):
+    """Devuelve corners (4x1x2 float32) del mejor candidato a anillo rojo, o None."""
+    hsv = cv2.cvtColor(frame, cv2.COLOR_BGR2HSV)
+    m1 = cv2.inRange(hsv, np.array(RED_HSV_LOW1,  np.uint8),
+                          np.array(RED_HSV_HIGH1, np.uint8))
+    m2 = cv2.inRange(hsv, np.array(RED_HSV_LOW2,  np.uint8),
+                          np.array(RED_HSV_HIGH2, np.uint8))
+    raw = cv2.bitwise_or(m1, m2)
+
+    k      = cv2.getStructuringElement(cv2.MORPH_ELLIPSE, (5, 5))
+    closed = cv2.morphologyEx(raw, cv2.MORPH_CLOSE, k, iterations=2)
+
+    h, w        = frame.shape[:2]
+    frame_area  = h * w
+
+    contours, _ = cv2.findContours(closed, cv2.RETR_EXTERNAL,
+                                   cv2.CHAIN_APPROX_SIMPLE)
+
+    best_corners = None
+    best_score   = 0.0
+    for cnt in contours:
+        area = cv2.contourArea(cnt)
+        if area < RED_MIN_AREA_FRAC * frame_area:
+            continue
+        if area > RED_MAX_AREA_FRAC * frame_area:
+            continue
+
+        peri = cv2.arcLength(cnt, True)
+        if peri <= 0:
+            continue
+        circularity = 4.0 * np.pi * area / (peri * peri)
+        if circularity < RED_MIN_CIRCULARITY:
+            continue
+
+        x, y, bw, bh = cv2.boundingRect(cnt)
+        if bh == 0:
+            continue
+        aspect = bw / bh
+        if aspect < RED_MIN_ASPECT or aspect > RED_MAX_ASPECT:
+            continue
+
+        if RED_REQUIRE_DIAGONAL and not _has_diagonal_line(raw[y:y+bh, x:x+bw]):
+            continue
+
+        score = circularity * area
+        if score > best_score:
+            best_score = score
+            best_corners = np.float32([
+                [x,        y       ],
+                [x,        y + bh  ],
+                [x + bw,   y + bh  ],
+                [x + bw,   y       ],
+            ]).reshape(-1, 1, 2)
+
+    return best_corners
+
+
+# ===========================================================================
 # MAIN
 # ===========================================================================
 def main():
@@ -381,6 +475,7 @@ def main():
                     scene_kp, scene_des = det.detectAndCompute(gray, None)
 
                     hits = 0
+                    restricted_hit = False
                     for label, ref in refs.items():
                         corners, n_in = detect_sign(ref, scene_kp, scene_des,
                                                     mat, frame.shape)
@@ -388,6 +483,20 @@ def main():
                             draw_detection(frame, corners, ref["text"],
                                            ref["color"], n_in)
                             totals[current_kind][label] += 1
+                            hits += 1
+                            if label == RED_FALLBACK_LABEL:
+                                restricted_hit = True
+
+                    if (RED_FALLBACK_ENABLED
+                            and not restricted_hit
+                            and RED_FALLBACK_LABEL in SIGNS):
+                        fb_corners = detect_red_prohibition(frame)
+                        if fb_corners is not None:
+                            _, fb_text, fb_color = SIGNS[RED_FALLBACK_LABEL]
+                            draw_detection(frame, fb_corners,
+                                           fb_text + " [color]",
+                                           fb_color, 0)
+                            totals[current_kind][RED_FALLBACK_LABEL] += 1
                             hits += 1
 
                     now = time.time()
